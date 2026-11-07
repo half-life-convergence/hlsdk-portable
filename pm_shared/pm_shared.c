@@ -3013,6 +3013,103 @@ Numtouch and touchindex[] will be set if any of the physents
 were contacted during the move.
 =============
 */
+/*
+=============
+PM_RoomScaleMove
+
+Half-Life: Convergence VR room scale. The engine puts the horizontal
+distance from the player's collision box to the real head into
+cmd.impact_position (a field the netcode sends and Half-Life doesn't use
+otherwise). Move the box that far with full collision, like a few steps
+of walking: straight, else sliding along what was hit, and onto stairs
+when standing on ground. Velocity is untouched, so it doesn't feel like
+being pushed. The distance actually moved goes back into this copy of
+the cmd, so the engine knows how much of the gap is left; a blocked
+head stays outside the box and the engine fades the view.
+=============
+*/
+static void PM_RoomScaleMove( void )
+{
+	vec3_t delta, start, end, best, remaining;
+	pmtrace_t trace, up, fwd, down;
+	float dist_best, dist_step, backoff;
+
+	delta[0] = pmove->cmd.impact_position[0];
+	delta[1] = pmove->cmd.impact_position[1];
+	delta[2] = 0.0f;
+
+	// unless moved below, the answer is "didn't move"
+	VectorClear( pmove->cmd.impact_position );
+
+	if( delta[0] == 0.0f && delta[1] == 0.0f )
+		return;
+
+	if( pmove->dead || ( pmove->flags & FL_ONTRAIN ) || g_onladder )
+		return;
+
+	if( pmove->movetype == MOVETYPE_NOCLIP )
+	{
+		VectorAdd( pmove->origin, delta, pmove->origin );
+		pmove->cmd.impact_position[0] = delta[0];
+		pmove->cmd.impact_position[1] = delta[1];
+		return;
+	}
+
+	if( pmove->movetype != MOVETYPE_WALK )
+		return;
+
+	VectorCopy( pmove->origin, start );
+
+	// straight
+	VectorAdd( start, delta, end );
+	trace = pmove->PM_PlayerTrace( start, end, PM_NORMAL, -1 );
+	if( trace.startsolid || trace.allsolid )
+		return; // stuck already, leave it to PM_CheckStuck
+
+	VectorCopy( trace.endpos, best );
+
+	if( trace.fraction < 1.0f )
+	{
+		// slide along the wall with what's left
+		VectorScale( delta, 1.0f - trace.fraction, remaining );
+		backoff = DotProduct( remaining, trace.plane.normal );
+		VectorMA( remaining, -backoff, trace.plane.normal, remaining );
+		remaining[2] = 0.0f;
+
+		VectorAdd( best, remaining, end );
+		trace = pmove->PM_PlayerTrace( best, end, PM_NORMAL, -1 );
+		if( !trace.startsolid && !trace.allsolid )
+			VectorCopy( trace.endpos, best );
+
+		// onto a stair: up a step, across, back down onto walkable ground
+		if( pmove->onground != -1 )
+		{
+			dist_best = ( best[0] - start[0] ) * ( best[0] - start[0] ) + ( best[1] - start[1] ) * ( best[1] - start[1] );
+
+			VectorCopy( start, end );
+			end[2] += pmove->movevars->stepsize;
+			up = pmove->PM_PlayerTrace( start, end, PM_NORMAL, -1 );
+
+			VectorAdd( up.endpos, delta, end );
+			fwd = pmove->PM_PlayerTrace( up.endpos, end, PM_NORMAL, -1 );
+
+			VectorCopy( fwd.endpos, end );
+			end[2] -= pmove->movevars->stepsize + 1.0f;
+			down = pmove->PM_PlayerTrace( fwd.endpos, end, PM_NORMAL, -1 );
+
+			dist_step = ( down.endpos[0] - start[0] ) * ( down.endpos[0] - start[0] ) + ( down.endpos[1] - start[1] ) * ( down.endpos[1] - start[1] );
+
+			if( !up.startsolid && !fwd.startsolid && !down.startsolid && !down.allsolid
+				&& down.fraction < 1.0f && down.plane.normal[2] >= 0.7f && dist_step > dist_best )
+				VectorCopy( down.endpos, best );
+		}
+	}
+
+	pmove->cmd.impact_position[0] = best[0] - start[0];
+	pmove->cmd.impact_position[1] = best[1] - start[1];
+	VectorCopy( best, pmove->origin );
+}
+
 void PM_PlayerMove( qboolean server )
 {
 	physent_t *pLadder = NULL;
@@ -3083,7 +3180,10 @@ void PM_PlayerMove( qboolean server )
 	PM_UpdateStepSound();
 
 	PM_Duck();
-	
+
+	// VR: walk the collision box toward the real head, after ducking so the hull is final
+	PM_RoomScaleMove();
+
 	// Don't run ladder code if dead or on a train
 	if( !pmove->dead && !( pmove->flags & FL_ONTRAIN ) )
 	{
