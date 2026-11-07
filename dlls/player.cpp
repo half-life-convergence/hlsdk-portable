@@ -368,6 +368,25 @@ Vector CBasePlayer::GetGunPosition()
 	//m_HackedGunPos = pev->view_ofs;
 	Vector origin;
 
+	// Half-Life: Convergence VR: while the weapon is in the tracked hand,
+	// shots start there. Singleplayer runs the engine's client in this
+	// process, and it publishes the hand's offset from the player origin
+	// in the vr_aim_* cvars every command (the aim direction already
+	// arrives as v_angle). Without VR, or in multiplayer, vr_aim_active is
+	// missing or 0 and this is the original eye position.
+	static cvar_t *vr_aim_active, *vr_aim_x, *vr_aim_y, *vr_aim_z;
+
+	if( !vr_aim_active )
+	{
+		vr_aim_active = CVAR_GET_POINTER( "vr_aim_active" );
+		vr_aim_x = CVAR_GET_POINTER( "vr_aim_x" );
+		vr_aim_y = CVAR_GET_POINTER( "vr_aim_y" );
+		vr_aim_z = CVAR_GET_POINTER( "vr_aim_z" );
+	}
+
+	if( vr_aim_active && vr_aim_active->value && vr_aim_x && vr_aim_y && vr_aim_z && gpGlobals->maxClients == 1 )
+		return pev->origin + Vector( vr_aim_x->value, vr_aim_y->value, vr_aim_z->value );
+
 	origin = pev->origin + pev->view_ofs;
 
 	return origin;

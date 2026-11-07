@@ -146,7 +146,7 @@ void CHandGrenade::WeaponIdle( void )
 
 		UTIL_MakeVectors( angThrow );
 
-		Vector vecSrc = m_pPlayer->pev->origin + m_pPlayer->pev->view_ofs + gpGlobals->v_forward * 16.0f;
+		Vector vecSrc = m_pPlayer->GetGunPosition() + gpGlobals->v_forward * 16.0f; // GetGunPosition: from the VR hand when tracked
 
 		Vector vecThrow = gpGlobals->v_forward * flVel + m_pPlayer->pev->velocity;
 

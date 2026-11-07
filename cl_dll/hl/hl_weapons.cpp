@@ -676,6 +676,9 @@ void HUD_WeaponsPostThink( local_state_s *from, local_state_s *to, usercmd_t *cm
 
 	HUD_InitClientWeapons();
 
+	// VR: predicted weapon events aim along this command's angles (HUD_PlaybackEvent)
+	g_vr_cmd_angles = cmd->viewangles;
+
 	// Get current clock
 	gpGlobals->time = time;
 

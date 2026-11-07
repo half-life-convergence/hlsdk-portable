@@ -40,6 +40,7 @@ extern cvar_t *cl_lw;
 extern int g_runfuncs;
 extern vec3_t v_angles;
 extern vec3_t v_client_aimangles;
+extern vec3_t g_vr_cmd_angles; // Half-Life: Convergence VR: angles of the command being predicted (the hand aim in VR)
 extern float g_lastFOV;
 extern struct local_state_s *g_finalstate;
 #endif

@@ -126,6 +126,8 @@ HUD_PlaybackEvent
 Directly queue up an event on the client
 =====================
 */
+vec3_t g_vr_cmd_angles;
+
 void HUD_PlaybackEvent( int flags, const edict_t *pInvoker, unsigned short eventindex, float delay,
 	const float *origin, const float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2 )
 {
@@ -138,6 +140,12 @@ void HUD_PlaybackEvent( int flags, const edict_t *pInvoker, unsigned short event
 	// Weapon prediction events are assumed to occur at the player's origin
 	org			= g_finalstate->playerstate.origin;
 	ang			= v_client_aimangles;
+
+	// Half-Life: Convergence VR: the camera angles aren't the aim in VR, the
+	// engine puts the hand's aim into the command's angles, which the server
+	// fires along too; predicted shots have to follow the same angles
+	if( gEngfuncs.pfnGetCvarFloat( "vr_aim_active" ))
+		ang = g_vr_cmd_angles;
 	gEngfuncs.pfnPlaybackEvent( flags, pInvoker, eventindex, delay, org, ang, fparam1, fparam2, iparam1, iparam2, bparam1, bparam2 );
 }
 

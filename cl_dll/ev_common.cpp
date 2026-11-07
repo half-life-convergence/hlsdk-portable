@@ -113,6 +113,16 @@ void EV_GetGunPosition( event_args_t *args, float *pos, float *origin )
 
 	if( EV_IsPlayer( idx ) )
 	{
+		// Half-Life: Convergence VR: the local player's shots start at the
+		// tracked hand, matching CBasePlayer::GetGunPosition on the server
+		if( EV_IsLocal( idx ) && !IS_FIRSTPERSON_SPEC && gEngfuncs.pfnGetCvarFloat( "vr_aim_active" ))
+		{
+			pos[0] = origin[0] + gEngfuncs.pfnGetCvarFloat( "vr_aim_x" );
+			pos[1] = origin[1] + gEngfuncs.pfnGetCvarFloat( "vr_aim_y" );
+			pos[2] = origin[2] + gEngfuncs.pfnGetCvarFloat( "vr_aim_z" );
+			return;
+		}
+
 		// in spec mode use entity viewheigh, not own
 		if( EV_IsLocal( idx ) && !IS_FIRSTPERSON_SPEC )
 		{
