@@ -2022,6 +2022,19 @@ void PM_UnDuck( void )
 
 	VectorCopy( pmove->origin, newOrigin );
 
+	// Half-Life: Convergence: letting go of duck before it finished (bInDuck,
+	// still the standing hull) raised the player by the hull difference anyway,
+	// as if he had been lowered, so a quick tap made him hop 18 units up and
+	// fall back. On a monitor that's a small bob; in VR the whole world jumps.
+	// The duck never happened, so just cancel it.
+	if( !( pmove->flags & FL_DUCKING ) && pmove->usehull == 0 )
+	{
+		pmove->bInDuck = false;
+		pmove->view_ofs[2] = VEC_VIEW;
+		pmove->flDuckTime = 0;
+		return;
+	}
+
 	if( pmove->onground != -1 )
 	{
 		for( i = 0; i < 3; i++ )
