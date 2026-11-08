@@ -966,6 +966,215 @@ void CStudioModelRenderer::StudioSetupBones( void )
 			ConcatTransforms( (*m_plighttransform)[pbones[i].parent], bonematrix, (*m_plighttransform)[i] );
 		}
 	}
+
+	StudioVRPinWeapon();
+}
+
+/*
+====================
+VR weapon pinning
+
+In VR the engine puts the weapon model in the tracked hand. Half-Life's
+weapon animations were made for a fixed camera with the hands in view:
+reloads, draws and the crowbar swing move the whole gun around, which in
+VR means the gun wanders inside the real hand. While the engine says the
+weapon is in the hand (vr_aim_active) and vr_pinweapon is 1, the whole
+model is moved so its main bone stays where the idle pose (sequence 0,
+frame 0) has it. Parts that move relative to that bone (slide, hammer,
+cylinder, pump) still animate, and animation events (muzzle flashes,
+reload sounds) still fire.
+
+The main bone is the one carrying most of the weapon's own vertices,
+leaving out the arms the engine marked in vr_arms.c.
+====================
+*/
+
+// set by the engine (engine/client/vr/vr_arms.c) in the model's memory
+#define VR_STUDIO_NF_ARM		( 1U << 29 )	// texture flag: part of the arms built into the weapon model
+#define VR_STUDIO_ARMS_SUBMODEL	( 1U << 29 )	// header flag: the arms have submodels of their own
+
+#define VR_GRIP_CACHE	32
+
+static cvar_t *vr_aim_active_cvar;
+static cvar_t *vr_pinweapon_cvar;
+
+static struct
+{
+	char	name[64];
+	int	bone;
+} vr_grip_cache[VR_GRIP_CACHE];
+
+static int VR_FindGripBone( const char *name, studiohdr_t *phdr )
+{
+	static int counts[MAXSTUDIOBONES];
+	static unsigned char seen[MAXSTUDIOVERTS];
+	mstudiotexture_t *ptexture = phdr->textureindex ? (mstudiotexture_t *)( (byte *)phdr + phdr->textureindex ) : NULL;
+	short *pskinref = phdr->skinindex ? (short *)( (byte *)phdr + phdr->skinindex ) : NULL;
+	mstudiobodyparts_t *pbodypart = (mstudiobodyparts_t *)( (byte *)phdr + phdr->bodypartindex );
+	int best = -1;
+
+	memset( counts, 0, sizeof( counts ));
+
+	for( int i = 0; i < phdr->numbodyparts; i++ )
+	{
+		mstudiomodel_t *psubmodel = (mstudiomodel_t *)( (byte *)phdr + pbodypart[i].modelindex );
+
+		for( int j = 0; j < pbodypart[i].nummodels; j++ )
+		{
+			mstudiomesh_t *pmesh = (mstudiomesh_t *)( (byte *)phdr + psubmodel[j].meshindex );
+			byte *pvertbone = (byte *)phdr + psubmodel[j].vertinfoindex;
+			bool arms_only = psubmodel[j].nummesh > 0;
+
+			if( psubmodel[j].numverts <= 0 || psubmodel[j].numverts > MAXSTUDIOVERTS )
+				continue;
+
+			// which meshes belong to the arms
+			for( int k = 0; k < psubmodel[j].nummesh && arms_only; k++ )
+			{
+				if( !ptexture || !pskinref || !( ptexture[pskinref[pmesh[k].skinref]].flags & VR_STUDIO_NF_ARM ))
+					arms_only = false;
+			}
+
+			if( arms_only )
+				continue;
+
+			memset( seen, 0, psubmodel[j].numverts );
+
+			for( int k = 0; k < psubmodel[j].nummesh; k++ )
+			{
+				short *ptricmds = (short *)( (byte *)phdr + pmesh[k].triindex );
+				int n;
+
+				// arm meshes mixed into the weapon's submodel
+				if( ptexture && pskinref && !( phdr->flags & VR_STUDIO_ARMS_SUBMODEL )
+					&& ( ptexture[pskinref[pmesh[k].skinref]].flags & VR_STUDIO_NF_ARM ))
+					continue;
+
+				while(( n = *( ptricmds++ )))
+				{
+					if( n < 0 )
+						n = -n;
+
+					for( ; n > 0; n--, ptricmds += 4 )
+					{
+						int v = ptricmds[0];
+
+						if( v >= 0 && v < psubmodel[j].numverts && !seen[v] )
+						{
+							seen[v] = 1;
+							if( pvertbone[v] < phdr->numbones )
+								counts[pvertbone[v]]++;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for( int i = 0; i < phdr->numbones; i++ )
+	{
+		if( counts[i] > 0 && ( best < 0 || counts[i] > counts[best] ))
+			best = i;
+	}
+
+	gEngfuncs.Con_DPrintf( "VR: %s: weapon pinned at bone %d (%s)\n", name, best,
+		best >= 0 ? ((mstudiobone_t *)( (byte *)phdr + phdr->boneindex ))[best].name : "none" );
+
+	return best;
+}
+
+static int VR_GripBone( model_t *model, studiohdr_t *phdr )
+{
+	int slot;
+
+	for( slot = 0; slot < VR_GRIP_CACHE && vr_grip_cache[slot].name[0]; slot++ )
+	{
+		if( !strcmp( vr_grip_cache[slot].name, model->name ))
+			return vr_grip_cache[slot].bone;
+	}
+
+	// the cache only fills once per weapon model, start over if a mod has a lot
+	if( slot == VR_GRIP_CACHE )
+	{
+		memset( vr_grip_cache, 0, sizeof( vr_grip_cache ));
+		slot = 0;
+	}
+
+	strncpy( vr_grip_cache[slot].name, model->name, sizeof( vr_grip_cache[slot].name ) - 1 );
+	vr_grip_cache[slot].bone = VR_FindGripBone( model->name, phdr );
+
+	return vr_grip_cache[slot].bone;
+}
+
+// inverse of a rotation + translation
+static void VR_InvertRigid( const float in[3][4], float out[3][4] )
+{
+	for( int i = 0; i < 3; i++ )
+	{
+		for( int j = 0; j < 3; j++ )
+			out[i][j] = in[j][i];
+		out[i][3] = -( in[0][i] * in[0][3] + in[1][i] * in[1][3] + in[2][i] * in[2][3] );
+	}
+}
+
+void CStudioModelRenderer::StudioVRPinWeapon( void )
+{
+	static float pos[MAXSTUDIOBONES][3];
+	static vec4_t q[MAXSTUDIOBONES];
+	int chain[MAXSTUDIOBONES];
+	float ref[3][4], bonematrix[3][4], tmp[3][4], inv[3][4], fix[3][4];
+	int grip, depth = 0;
+
+	if( m_pCurrentEntity != gEngfuncs.GetViewModel() || !IEngineStudio.IsHardware() )
+		return;
+
+	// registered by the VR engine only, missing on a desktop engine
+	if( !vr_aim_active_cvar )
+		vr_aim_active_cvar = gEngfuncs.pfnGetCvarPointer( "vr_aim_active" );
+	if( !vr_pinweapon_cvar )
+		vr_pinweapon_cvar = gEngfuncs.pfnGetCvarPointer( "vr_pinweapon" );
+
+	if( !vr_aim_active_cvar || !vr_pinweapon_cvar || !vr_aim_active_cvar->value || !vr_pinweapon_cvar->value )
+		return;
+
+	if( m_pStudioHeader->numseq <= 0 || ( grip = VR_GripBone( m_pRenderModel, m_pStudioHeader )) < 0 )
+		return;
+
+	// the idle pose's main bone, relative to the model
+	mstudioseqdesc_t *pseqdesc = (mstudioseqdesc_t *)( (byte *)m_pStudioHeader + m_pStudioHeader->seqindex );
+	mstudiobone_t *pbones = (mstudiobone_t *)( (byte *)m_pStudioHeader + m_pStudioHeader->boneindex );
+
+	StudioCalcRotations( pos, q, pseqdesc, StudioGetAnim( m_pRenderModel, pseqdesc ), 0.0f );
+
+	for( int i = grip; i != -1 && depth < MAXSTUDIOBONES; i = pbones[i].parent )
+		chain[depth++] = i;
+
+	MatrixCopy( (*m_protationmatrix), ref );
+
+	while( depth-- > 0 )
+	{
+		int i = chain[depth];
+
+		QuaternionMatrix( q[i], bonematrix );
+		bonematrix[0][3] = pos[i][0];
+		bonematrix[1][3] = pos[i][1];
+		bonematrix[2][3] = pos[i][2];
+
+		ConcatTransforms( ref, bonematrix, tmp );
+		MatrixCopy( tmp, ref );
+	}
+
+	// move everything by what it takes to bring the main bone back there
+	VR_InvertRigid( (*m_pbonetransform)[grip], inv );
+	ConcatTransforms( ref, inv, fix );
+
+	for( int i = 0; i < m_pStudioHeader->numbones; i++ )
+	{
+		ConcatTransforms( fix, (*m_pbonetransform)[i], tmp );
+		MatrixCopy( tmp, (*m_pbonetransform)[i] );
+		ConcatTransforms( fix, (*m_plighttransform)[i], tmp );
+		MatrixCopy( tmp, (*m_plighttransform)[i] );
+	}
 }
 
 /*

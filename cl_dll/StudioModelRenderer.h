@@ -76,6 +76,9 @@ public:
 	// Compute rotations
 	virtual void StudioCalcRotations( float pos[][3], vec4_t *q, mstudioseqdesc_t *pseqdesc, mstudioanim_t *panim, float f );
 
+	// VR: keep the weapon's main bone where the idle pose has it (weapon in the tracked hand)
+	void StudioVRPinWeapon( void );
+
 	// Send bones and verts to renderer
 	virtual void StudioRenderModel( void );
 
