@@ -1394,9 +1394,131 @@ int CStudioModelRenderer::StudioDrawModel( int flags )
 		IEngineStudio.StudioSetRemapColors( m_nTopColor, m_nBottomColor );
 
 		StudioRenderModel();
+		StudioVRDrawPatch( &lighting );
 	}
 
 	return 1;
+}
+
+/*
+====================
+VR patch models
+
+Half-Life's weapon models leave out the faces the desktop camera never saw.
+For models/v_X.mdl, an optional models/vr/v_X.mdl of our own fills them in,
+built on the same bone names. The engine loads it while the map loads and
+lists it in vr_patches (engine/client/vr/vr_patch.c); here it is drawn right
+after the weapon with the weapon's bones copied by name, the way players'
+weapon models are drawn in StudioDrawPlayer. Only models the engine listed
+are looked up, and those come from the model cache, so this never reads files.
+====================
+*/
+#define VR_PATCH_CACHE	16
+
+static cvar_t *vr_patches_cvar;
+static char vr_patch_list[256];
+static struct
+{
+	model_t	*weapon;
+	char	name[64];
+	model_t	*patch;
+} vr_patch_cache[VR_PATCH_CACHE];
+static int vr_patch_count;
+
+static bool VR_PatchListed( const char *base )
+{
+	size_t len = strlen( base );
+
+	for( const char *p = vr_patch_list; ( p = strstr( p, base )) != NULL; p += len )
+	{
+		if(( p == vr_patch_list || p[-1] == ' ' ) && ( p[len] == ' ' || p[len] == '\0' ))
+			return true;
+	}
+
+	return false;
+}
+
+static model_t *VR_PatchFor( model_t *weapon )
+{
+	const char *base;
+	char path[96];
+	int i;
+
+	if( !vr_patches_cvar )
+		vr_patches_cvar = gEngfuncs.pfnGetCvarPointer( "vr_patches" );
+
+	if( !vr_patches_cvar || !vr_patches_cvar->string[0] )
+		return NULL;
+
+	// a new map may load other patches
+	if( strncmp( vr_patch_list, vr_patches_cvar->string, sizeof( vr_patch_list ) - 1 ))
+	{
+		strncpy( vr_patch_list, vr_patches_cvar->string, sizeof( vr_patch_list ) - 1 );
+		vr_patch_list[sizeof( vr_patch_list ) - 1] = '\0';
+		vr_patch_count = 0;
+	}
+
+	for( i = 0; i < vr_patch_count; i++ )
+	{
+		if( vr_patch_cache[i].weapon == weapon && !strcmp( vr_patch_cache[i].name, weapon->name ))
+			return vr_patch_cache[i].patch;
+	}
+
+	if( vr_patch_count == VR_PATCH_CACHE )
+		vr_patch_count = 0;
+
+	i = vr_patch_count++;
+	vr_patch_cache[i].weapon = weapon;
+	strncpy( vr_patch_cache[i].name, weapon->name, sizeof( vr_patch_cache[i].name ) - 1 );
+	vr_patch_cache[i].name[sizeof( vr_patch_cache[i].name ) - 1] = '\0';
+	vr_patch_cache[i].patch = NULL;
+
+	base = strrchr( weapon->name, '/' );
+	base = base ? base + 1 : weapon->name;
+
+	if( VR_PatchListed( base ))
+	{
+		snprintf( path, sizeof( path ), "models/vr/%s", base );
+		vr_patch_cache[i].patch = IEngineStudio.Mod_ForName( path, 0 ); // already loaded by the engine
+	}
+
+	return vr_patch_cache[i].patch;
+}
+
+void CStudioModelRenderer::StudioVRDrawPatch( alight_t *plighting )
+{
+	model_t *patch;
+
+	if( m_pCurrentEntity != gEngfuncs.GetViewModel() )
+		return;
+
+	// only while the weapon is in the tracked hand, that's when its holes show
+	if( !vr_aim_active_cvar )
+		vr_aim_active_cvar = gEngfuncs.pfnGetCvarPointer( "vr_aim_active" );
+	if( !vr_aim_active_cvar || !vr_aim_active_cvar->value )
+		return;
+
+	if( !( patch = VR_PatchFor( m_pRenderModel )))
+		return;
+
+	cl_entity_t saveent = *m_pCurrentEntity;	// StudioMergeBones may reset the sequence
+	studiohdr_t *savehdr = m_pStudioHeader;
+	model_t *savemodel = m_pRenderModel;
+
+	m_pRenderModel = patch;
+	m_pStudioHeader = (studiohdr_t *)IEngineStudio.Mod_Extradata( patch );
+	IEngineStudio.StudioSetHeader( m_pStudioHeader );
+	IEngineStudio.SetRenderModel( patch );
+
+	StudioMergeBones( patch );
+	IEngineStudio.StudioSetupLighting( plighting );
+	StudioRenderModel();
+
+	*m_pCurrentEntity = saveent;
+	m_pRenderModel = savemodel;
+	m_pStudioHeader = savehdr;
+	IEngineStudio.StudioSetHeader( m_pStudioHeader );
+	IEngineStudio.SetRenderModel( m_pRenderModel );
 }
 
 /*
