@@ -2549,6 +2549,59 @@ void PM_PreventMegaBunnyJumping( void )
 PM_Jump
 =============
 */
+/*
+=============
+PM_TryLongJump
+
+Half-Life: Convergence: the long jump module works by double-tapping
+jump, not by ducking: the first press jumps at once as usual (no waiting
+for a possible second tap, that would delay every jump), and a second
+press in the air shortly after takeoff turns the jump into a long jump.
+Ducking no longer has anything to do with it, so auto-crouch can duck
+from the moment of the jump, and jumping while crouched in a vent never
+long-jumps by accident.
+
+"Shortly after takeoff" is read from the vertical speed: a jump starts at
+JUMP_SPEED and gravity takes it down from there, so it's still above
+JUMP_SPEED minus LONGJUMP_WINDOW seconds of gravity. That needs no extra
+state, so the client's prediction and the server always agree. The long
+jump's vertical speed starts higher than a normal jump's; gravity
+already applied since takeoff is kept, by adding the difference.
+
+It launches along the current horizontal movement instead of where the
+view (in VR: the gun) points, at the original speed, with no view punch.
+=============
+*/
+#define JUMP_SPEED		268.3282f	// sqrt( 2 * 800 * 45 ), the normal jump
+#define LONGJUMP_UPSPEED	299.3326f	// sqrt( 2 * 800 * 56 ), the long jump
+#define LONGJUMP_WINDOW		0.12f	// seconds after takeoff a second press still counts: short, so the
+					// boost comes right after takeoff and doesn't feel like a second jump
+
+static void PM_TryLongJump( void )
+{
+	float speed, gravity;
+	int i;
+
+	if( atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "slj" )) != 1 )
+		return;
+
+	if( pmove->movetype != MOVETYPE_WALK || pmove->waterlevel >= 2 )
+		return;
+
+	gravity = pmove->movevars->gravity * ( pmove->gravity ? pmove->gravity : 1.0f );
+	if( pmove->velocity[2] > JUMP_SPEED + 1.0f || pmove->velocity[2] < JUMP_SPEED - gravity * LONGJUMP_WINDOW )
+		return; // not just after a jump
+
+	speed = sqrt( pmove->velocity[0] * pmove->velocity[0] + pmove->velocity[1] * pmove->velocity[1] );
+	if( speed <= 50.0f || speed >= PLAYER_LONGJUMP_SPEED )
+		return; // standing still (the original's check), or already long-jumping
+
+	for( i = 0; i < 2; i++ )
+		pmove->velocity[i] = pmove->velocity[i] / speed * PLAYER_LONGJUMP_SPEED * 1.6f;
+
+	pmove->velocity[2] += LONGJUMP_UPSPEED - JUMP_SPEED;
+}
+
 void PM_Jump( void )
 {
 	int i;
@@ -2624,6 +2677,10 @@ void PM_Jump( void )
 	// No more effect
  	if( pmove->onground == -1 )
 	{
+		// a new press in the air: maybe the second tap of a long jump
+		if( !( pmove->oldbuttons & IN_JUMP ))
+			PM_TryLongJump();
+
 		// Flag that we jumped.
 		// HACK HACK HACK
 		// Remove this when the game .dll no longer does physics code!!!!
@@ -2656,36 +2713,12 @@ void PM_Jump( void )
 		}
 	}
 
-	// See if user can super long jump?
-	cansuperjump = atoi( pmove->PM_Info_ValueForKey( pmove->physinfo, "slj" ) ) == 1 ? true : false;
-
 	// Acclerate upward
-	// If we are ducking...
-	if( ( pmove->bInDuck ) || ( pmove->flags & FL_DUCKING ) )
-	{
-		// Adjust for super long jump module
-		// UNDONE -- note this should be based on forward angles, not current velocity.
-		if( cansuperjump && ( pmove->cmd.buttons & IN_DUCK ) && ( pmove->flDuckTime > 0 ) &&
-			Length( pmove->velocity ) > 50 )
-		{
-			pmove->punchangle[0] = -5;
-
-			for( i = 0; i < 2; i++ )
-			{
-				pmove->velocity[i] = pmove->forward[i] * PLAYER_LONGJUMP_SPEED * 1.6f;
-			}
-
-			pmove->velocity[2] = sqrt( 2.0f * 800.0f * 56.0f );
-		}
-		else
-		{
-			pmove->velocity[2] = sqrt( 2.0f * 800.0f * 45.0f );
-		}
-	}
-	else
-	{
-		pmove->velocity[2] = sqrt( 2.0f * 800.0f * 45.0f );
-	}
+	// Half-Life: Convergence: the long jump is a double tap now, see
+	// PM_TryLongJump; ducking or not, every jump starts the same
+	(void)cansuperjump;
+	(void)i;
+	pmove->velocity[2] = JUMP_SPEED;
 
 	// Decay it for simulation
 	PM_FixupGravityVelocity();
