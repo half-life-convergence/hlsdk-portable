@@ -79,8 +79,6 @@ public:
 	// VR: keep the weapon's main bone where the idle pose has it (weapon in the tracked hand)
 	void StudioVRPinWeapon( void );
 
-	// VR: draw the weapon's patch model (models/vr/v_X.mdl) with the weapon's bones
-	void StudioVRDrawPatch( alight_t *plighting );
 
 	// Send bones and verts to renderer
 	virtual void StudioRenderModel( void );
