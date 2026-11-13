@@ -268,6 +268,10 @@ void CShotgun::Reload( void )
 	// check to see if we're ready to reload
 	if( m_fInSpecialReload == 0 )
 	{
+		// VR: only started by hand (the shells then go in one after another as before)
+		if( !VR_ReloadAllowed( m_pPlayer ))
+			return;
+
 		SendWeaponAnim( SHOTGUN_START_RELOAD );
 		m_fInSpecialReload = 1;
 		m_pPlayer->m_flNextAttack = UTIL_WeaponTimeBase() + 0.6f;

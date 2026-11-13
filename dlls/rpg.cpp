@@ -325,6 +325,10 @@ void CRpg::Reload( void )
 	
 	m_flNextPrimaryAttack = GetNextAttackDelay( 0.5f );
 
+	// VR: only reloaded by hand, and the laser spot stays on until then
+	if( !VR_ReloadAllowed( m_pPlayer ))
+		return;
+
 	if( m_cActiveRockets && m_fSpotActive )
 	{
 		// no reloading when there are active missiles tracking the designator.

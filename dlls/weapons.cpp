@@ -677,7 +677,8 @@ void CBasePlayerWeapon::ItemPostFrame( void )
 		else
 		{
 			// weapon is useable. Reload if empty and weapon has waited as long as it has to after firing
-			if( m_iClip == 0 && !(iFlags() & ITEM_FLAG_NOAUTORELOAD ) && m_flNextPrimaryAttack < ( UseDecrement() ? 0.0f : gpGlobals->time ) )
+			if( m_iClip == 0 && !(iFlags() & ITEM_FLAG_NOAUTORELOAD ) && m_flNextPrimaryAttack < ( UseDecrement() ? 0.0f : gpGlobals->time )
+				&& VR_ReloadAllowed( m_pPlayer )) // VR: otherwise idle on while empty
 			{
 				Reload();
 				return;
@@ -992,9 +993,24 @@ BOOL CBasePlayerWeapon::DefaultDeploy( const char *szViewModel, const char *szWe
 	return TRUE;
 }
 
+BOOL VR_ReloadAllowed( CBasePlayer *pPlayer )
+{
+	static cvar_t *vr_aim_active, *vr_manualreload;
+
+	if( !vr_manualreload )
+	{
+		vr_aim_active = CVAR_GET_POINTER( "vr_aim_active" );
+		vr_manualreload = CVAR_GET_POINTER( "vr_manualreload" );
+	}
+
+	if( !vr_aim_active || !vr_manualreload || !vr_aim_active->value || !vr_manualreload->value || gpGlobals->maxClients != 1 )
+		return TRUE;
+	return ( pPlayer->pev->button & IN_RELOAD ) != 0;
+}
+
 BOOL CBasePlayerWeapon::DefaultReload( int iClipSize, int iAnim, float fDelay, int body )
 {
-	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 )
+	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || !VR_ReloadAllowed( m_pPlayer ))
 		return FALSE;
 
 	int j = Q_min( iClipSize - m_iClip, m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] );

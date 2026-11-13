@@ -19,6 +19,13 @@
 #include "effects.h"
 
 class CBasePlayer;
+
+// Half-Life: Convergence VR: with the engine's vr_manualreload on and the
+// gun in the tracked hand, a reload only starts when the command presses
+// reload (the engine does when the off hand puts ammo in), never on its own
+// when the clip runs dry. Defined in weapons.cpp (server) and
+// hl_weapons.cpp (client prediction).
+BOOL VR_ReloadAllowed( CBasePlayer *pPlayer );
 extern int gmsgWeapPickup;
 
 void DeactivateSatchels( CBasePlayer *pOwner );
