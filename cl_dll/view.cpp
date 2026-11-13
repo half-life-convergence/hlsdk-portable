@@ -1589,11 +1589,29 @@ void V_DropPunchAngle( float frametime, float *ev_punchangle )
 V_PunchAxis
 
 Client side punch effect
+
+Half-Life: Convergence: in VR the camera follows the headset, so the
+punch kicks the gun hand instead. While the weapon is in the hand
+(vr_aim_active), its size is added straight into the engine's
+vr_recoil_pending value, which the engine takes and zeroes once a frame.
+Only the value is used, so no strings are made per shot; that works
+because singleplayer runs the engine and this DLL in one process.
 =============
 */
 void V_PunchAxis( int axis, float punch )
 {
+	static cvar_t *vr_aim_active_punch, *vr_recoil_pending;
+
 	g_ev_punchangle[axis] = punch;
+
+	if( !vr_recoil_pending )
+	{
+		vr_aim_active_punch = gEngfuncs.pfnGetCvarPointer( "vr_aim_active" );
+		vr_recoil_pending = gEngfuncs.pfnGetCvarPointer( "vr_recoil_pending" );
+	}
+
+	if( vr_recoil_pending && vr_aim_active_punch && vr_aim_active_punch->value )
+		vr_recoil_pending->value += fabs( punch );
 }
 
 /*
