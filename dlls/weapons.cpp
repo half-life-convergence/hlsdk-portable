@@ -1008,6 +1008,31 @@ BOOL VR_ReloadAllowed( CBasePlayer *pPlayer )
 	return ( pPlayer->pev->button & IN_RELOAD ) != 0;
 }
 
+/*
+=====================
+CBasePlayerWeapon::VR_EjectMagazine
+
+Half-Life: Convergence VR: the weapon hand's button drops the magazine
+(VR_IMPULSE_EJECT). No rounds are lost: they go back to the reserve, as
+far as it has room, like Half-Life's own reload keeps them. The engine
+draws the falling magazine and plays the sound; the gun is empty until
+the off hand puts ammo in. Not while reloading, so a reload under way
+can't be undone.
+=====================
+*/
+void CBasePlayerWeapon::VR_EjectMagazine( void )
+{
+	int room;
+
+	if( iMaxClip() == WEAPON_NOCLIP || m_iClip <= 0 || m_fInReload || m_fInSpecialReload || m_iPrimaryAmmoType < 0 )
+		return;
+
+	room = iMaxAmmo1() - m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType];
+	if( room > 0 )
+		m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] += Q_min( m_iClip, room );
+	m_iClip = 0;
+}
+
 BOOL CBasePlayerWeapon::DefaultReload( int iClipSize, int iAnim, float fDelay, int body )
 {
 	if( m_pPlayer->m_rgAmmo[m_iPrimaryAmmoType] <= 0 || !VR_ReloadAllowed( m_pPlayer ))

@@ -26,6 +26,10 @@ class CBasePlayer;
 // when the clip runs dry. Defined in weapons.cpp (server) and
 // hl_weapons.cpp (client prediction).
 BOOL VR_ReloadAllowed( CBasePlayer *pPlayer );
+
+// The engine sends this impulse when the weapon hand's reload button
+// drops the magazine (CBasePlayerWeapon::VR_EjectMagazine, server only).
+#define VR_IMPULSE_EJECT 210
 extern int gmsgWeapPickup;
 
 void DeactivateSatchels( CBasePlayer *pOwner );
@@ -318,6 +322,7 @@ public:
 	virtual BOOL IsUseable( void );
 	BOOL DefaultDeploy( const char *szViewModel, const char *szWeaponModel, int iAnim, const char *szAnimExt, int skiplocal = 0, int body = 0 );
 	int DefaultReload( int iClipSize, int iAnim, float fDelay, int body = 0 );
+	void VR_EjectMagazine( void ); // VR: empty the clip, the rounds go back to the reserve (server only)
 
 	virtual void ItemPostFrame( void );	// called each frame by the player PostThink
 	// called by CBasePlayerWeapons ItemPostFrame()

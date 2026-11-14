@@ -3552,6 +3552,11 @@ void CBasePlayer::ImpulseCommands()
 			FlashlightTurnOn();
 		}
 		break;
+	case VR_IMPULSE_EJECT:
+		// Half-Life: Convergence VR: the weapon hand's button drops the magazine
+		if( m_pActiveItem && m_pActiveItem->GetWeaponPtr( ) && gpGlobals->maxClients == 1 )
+			( (CBasePlayerWeapon *)m_pActiveItem->GetWeaponPtr( ))->VR_EjectMagazine( );
+		break;
 	case 201:
 		// paint decal
 		if( gpGlobals->time < m_flNextDecalTime )
